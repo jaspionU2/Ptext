@@ -3,9 +3,8 @@
 #include <stdlib.h>
 #include <termios.h>
 #include <unistd.h>
-#include "editor/editor.h"
-#include "terminal/terminal.h"
-
+#include "../include/editor.h"
+#include "../include/terminal.h"
 
 int main(int argc, char *argv[])
 {
@@ -13,8 +12,6 @@ int main(int argc, char *argv[])
     initEditor();
     if (argc >= 2)
         editorOpen(argv[1]);
-
-    editorSetStatusMessage("HELP: Ctrl-q = quit");
 
     while (1)
     {
@@ -35,5 +32,5 @@ int main(int argc, char *argv[])
     //     }
     // }
 
-    return 0;
+    // return 0;
 }
