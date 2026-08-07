@@ -371,7 +371,7 @@ void editorMoveCursor(int key)
 void editorProcessKeyPress()
 {
     int c = terminalReadKey();
-    char editorActionType[20];
+    // char editorActionType[20];
     int deletedChar;
 
     switch (c)
@@ -394,14 +394,19 @@ void editorProcessKeyPress()
         editorUndo();
         break;
 
+    case CTRL_KEY('y'):
+        editorRedo();
+        break;
+
     case (int)'\r':
     case (int)'\n':
-        eConfig.activeCommand.len = eConfig.row[eConfig.cursorY].size;
-        eConfig.activeCommand.actualPosition = eConfig.cursorX;
+        // eConfig.activeCommand.len = eConfig.row[eConfig.cursorY].size;
+        // eConfig.activeCommand.actualPosition = eConfig.cursorX;
+        editorBackup("newline", c);
         editorInsertNewline();
         editorMoveCursor(ARROW_DOWN);
         eConfig.cursorX = 0;
-        strcpy(editorActionType, "newline");
+        // strcpy(editorActionType, "newline");
         break;
 
     case HOME_KEY:
@@ -423,14 +428,21 @@ void editorProcessKeyPress()
         if (c == DEL_KEY)
         {
             deletedChar = eConfig.row[eConfig.cursorY].chars[eConfig.cursorX];
+            editorBackup("delete", deletedChar);
             editorDelChar(eConfig.cursorY, eConfig.cursorX);
-            strcpy(editorActionType, "delete");
         }    
         else if (c == BACKSPACE || c == 8)
         {
-            deletedChar = eConfig.row[eConfig.cursorY].chars[eConfig.cursorX - 1];
+            deletedChar = eConfig.cursorX > 0 ? eConfig.row[eConfig.cursorY].chars[eConfig.cursorX - 1] : -1;
+            if (eConfig.cursorY > 0 && eConfig.cursorX == 0 && deletedChar == -1)
+            {
+                editorBackup("mergeLine", deletedChar);
+            }
+            else
+            {
+                editorBackup("backspace", deletedChar);
+            }
             editorBackspaceChar(eConfig.cursorY, eConfig.cursorX);
-            strcpy(editorActionType,  "backspace");
         }
         break;
 
@@ -462,19 +474,20 @@ void editorProcessKeyPress()
         break;
 
     default:
+        editorBackup("add", c);
         editorInsertChar(c);
         editorMoveCursor(ARROW_RIGHT);
-        strcpy(editorActionType, "add");
+        // strcpy(editorActionType, "add");
         break;
     }
 
-    if (((c >= CTRL_KEY('a') && c <= CTRL_KEY('z')) && c != '\r' && c != '\n') || (c >= ARROW_LEFT && c <= PAGE_DOWN)) 
-        return;
+    // if (((c >= CTRL_KEY('a') && c <= CTRL_KEY('z')) && c != '\r' && c != '\n') || (c >= ARROW_LEFT && c <= PAGE_DOWN)) 
+    //     return;
 
-    if (c == DEL_KEY || c == BACKSPACE || c == CTRL_KEY('h'))
-        c = deletedChar;
+    // if (c == DEL_KEY || c == BACKSPACE || c == CTRL_KEY('h'))
+    //     c = deletedChar;
 
-    editorBackup(editorActionType, c);
+    // editorBackup(editorActionType, c);
 }
 
 void editorInsertInRow(EditorRow *atRow, int atCol, int key)
@@ -515,6 +528,9 @@ void editorInsertChar(int c)
 
 void editorBackup(char *actionType, int command)
 {
+    if (eConfig.redoStack)
+        freeStack(&eConfig.redoStack);
+
     CommandHistory *currentHistory = &eConfig.activeCommand;
 
     int shouldFlush = 0;
@@ -522,34 +538,33 @@ void editorBackup(char *actionType, int command)
     {
         if (strcmp(currentHistory->typeAction, actionType) != 0)
             shouldFlush = 1;
+        else if (currentHistory->row != eConfig.cursorY)
+            shouldFlush = 1;
+        else if (strcmp(actionType, "newline") == 0)
+            shouldFlush = 1;
+        else if (strcmp(actionType, "mergeLine") == 0)
+            shouldFlush = 1;
         else if (strcmp(actionType, "add") == 0 && currentHistory->actualPosition + 1 != eConfig.cursorX)
             shouldFlush = 1;
-        else if (strcmp(actionType, "delete") == 0 || (strcmp(actionType, "backspace")) == 0)
+        else if (strcmp(actionType, "delete") == 0 || strcmp(actionType, "backspace") == 0)
         {
-            int cursorCompensado = eConfig.cursorX;
-            if (eConfig.cursorX >= currentHistory->startX)
-            {
-                cursorCompensado += currentHistory->len;
-            }
+            int diffDeletedPos;
 
-            if (abs(currentHistory->actualPosition - cursorCompensado) > 1)
+            if (strcmp(actionType, "backspace") == 0)
+                diffDeletedPos = currentHistory->actualPosition - (eConfig.cursorX - 1);
+            else
+                diffDeletedPos = currentHistory->actualPosition - eConfig.cursorX;
+
+            if (diffDeletedPos != 0 && diffDeletedPos != 1)
             {
                 shouldFlush = 1;
             }
-        }
-        else if (strcmp(actionType, "newline") == 0)
-        {
-            shouldFlush = 1;
-        }
-        else if (currentHistory->row != eConfig.cursorY)
-        {
-            shouldFlush = 1;
         }
     }
 
     if (shouldFlush)
     {
-        int historyLen = snprintf(NULL, 0, "%s;%d;%d;%s", currentHistory->typeAction, currentHistory->row, currentHistory->startX, currentHistory->command);
+        int historyLen = snprintf(NULL, 0, "%s\x1F%d\x1F%d\x1F%s", currentHistory->typeAction, currentHistory->row, currentHistory->startX, currentHistory->command);
 
         if (historyLen < 0)
             die("snprintf");
@@ -559,7 +574,7 @@ void editorBackup(char *actionType, int command)
         if (!historyEntry)
             die("malloc");
 
-        snprintf(historyEntry, historyLen + 1, "%s;%d;%d;%s", currentHistory->typeAction, currentHistory->row, currentHistory->startX, currentHistory->command);
+        snprintf(historyEntry, historyLen + 1, "%s\x1F%d\x1F%d\x1F%s", currentHistory->typeAction, currentHistory->row, currentHistory->startX, currentHistory->command);
 
         push(&eConfig.undoStack, historyEntry);
 
@@ -576,27 +591,32 @@ void editorBackup(char *actionType, int command)
         if (!currentHistory->typeAction)
             die("strdup");
 
-        size_t newSize = 1;
-        size_t startIndex = currentHistory->actualPosition;
-
-        if (strcmp(actionType, "newline") == 0 && startIndex < currentHistory->len)
-            newSize = currentHistory->len - startIndex;
-
-        currentHistory->command = malloc(newSize + 1);
+        currentHistory->command = malloc(2);
 
         if (!currentHistory->command)
             die("malloc");
 
-        if (strcmp(actionType, "newline") == 0 && startIndex < currentHistory->len)
-            memcpy(currentHistory->command, eConfig.row[eConfig.cursorY].chars, newSize);
-        else
-            currentHistory->command[0] = (char)command;
-
-        currentHistory->command[newSize] = '\0';
+        currentHistory->command[0] = command == -1 ? '\r' : (char)command;
+        currentHistory->command[1] = '\0';
         currentHistory->actualPosition = eConfig.cursorX;
         currentHistory->row = eConfig.cursorY;
         currentHistory->startX = eConfig.cursorX;
-        currentHistory->len = newSize;
+        currentHistory->len = 1;
+
+        if (strcmp(actionType, "mergeLine") == 0)
+        {
+            EditorRow lastRow = eConfig.row[eConfig.cursorY - 1];
+
+            currentHistory->row = eConfig.cursorY - 1;
+            currentHistory->startX = lastRow.size;
+            currentHistory->actualPosition = lastRow.size + 1;
+        }
+        else if (strcmp(actionType, "backspace") == 0)
+        {
+            currentHistory->startX = eConfig.cursorX - 1;
+            currentHistory->actualPosition = eConfig.cursorX - 1;
+        }
+        
         return;
     }
 
@@ -610,10 +630,14 @@ void editorBackup(char *actionType, int command)
 
     if (strcmp(actionType, "delete") == 0 || strcmp(actionType,  "backspace") == 0)
     {
-        if (eConfig.cursorX < currentHistory->actualPosition)
+        int posCursorX = strcmp(actionType, "backspace") == 0 ? eConfig.cursorX - 1 : eConfig.cursorX;
+
+        if (posCursorX < currentHistory->actualPosition)
         {
             memmove(&currentHistory->command[1], &currentHistory->command[0], currentCommandLen);
             currentHistory->command[0] = (char)command;
+
+            currentHistory->startX = posCursorX;
         }
         else
         {
@@ -624,7 +648,7 @@ void editorBackup(char *actionType, int command)
         currentHistory->command[currentCommandLen] = (char)command;
 
     currentHistory->command[currentCommandLen + 1] = '\0';
-    currentHistory->actualPosition = eConfig.cursorX;
+    currentHistory->actualPosition =  strcmp(actionType, "backspace") == 0 ? eConfig.cursorX - 1 : eConfig.cursorX;
     currentHistory->len++;
 }
 
@@ -634,7 +658,7 @@ void editorUndo()
 
     if (currentHistory->command != NULL && currentHistory->typeAction != NULL)
     {
-        int historyLen = snprintf(NULL, 0, "%s;%d;%d;%s",
+        int historyLen = snprintf(NULL, 0, "%s\x1F%d\x1F%d\x1F%s",
                                   currentHistory->typeAction,
                                   currentHistory->row,
                                   currentHistory->startX,
@@ -647,7 +671,7 @@ void editorUndo()
         if (!historyEntry)
             die("malloc");
 
-        snprintf(historyEntry, (size_t)historyLen + 1, "%s;%d;%d;%s",
+        snprintf(historyEntry, (size_t)historyLen + 1, "%s\x1F%d\x1F%d\x1F%s",
                  currentHistory->typeAction,
                  currentHistory->row,
                  currentHistory->startX,
@@ -677,7 +701,7 @@ void editorUndo()
 
     char *pieces[4];
 
-    char *token = strtok(actionCopy, ";");
+    char *token = strtok(actionCopy, "\x1F");
 
     if (!token)
         die("strtok");
@@ -686,7 +710,7 @@ void editorUndo()
     for (; token != NULL && i < 4; i++)
     {
         pieces[i] = token;
-        token = strtok(NULL, ";");
+        token = strtok(NULL, "\x1F");
     }
 
     if (i < 4)
@@ -699,7 +723,7 @@ void editorUndo()
 
     if (strcmp(typeAction, "add") == 0)
     {
-        eConfig.cursorX = startCol + commandLen - 1;
+        eConfig.cursorX = startCol + commandLen;
 
         for (size_t i = 0; i < commandLen; i++)
         {
@@ -708,27 +732,37 @@ void editorUndo()
     }
     else if (strcmp(typeAction, "backspace") == 0 || strcmp(typeAction, "delete") == 0)
     {
-        if (eConfig.cursorX != startCol)
-            eConfig.cursorX = startCol;
+        eConfig.cursorY = row;
+        eConfig.cursorX = startCol;
 
         for (size_t i = 0; i < commandLen; i++)
         {
             editorInsertChar(pieces[3][i]);
             editorMoveCursor(ARROW_RIGHT);
         }
-    }
-    else
-    {
-        eConfig.cursorX = 0;
-        editorBackspaceChar(row, startCol);
-    }
 
-    if (strcmp(typeAction, "delete") == 0)
+        if (strcmp(typeAction, "delete") == 0)
+        {
+            eConfig.cursorX = startCol;
+        }
+    }
+    else if (strcmp(typeAction, "newline") == 0)
+    {
+        editorBackspaceChar(row + 1, 0);
+    }
+    else if (strcmp(typeAction, "mergeLine") == 0)
+    {
+        eConfig.cursorY = row;
         eConfig.cursorX = startCol;
+        editorInsertNewline();
+        eConfig.cursorY = row + 1;
+        eConfig.cursorX = 0;
+    }
 
     push(&eConfig.redoStack, action);
 
     free(typeAction);
+    free(actionCopy);
     free(action);
 }
 
@@ -742,9 +776,74 @@ void editorRedo()
     if (!action)
         return;
 
+    char *actionCopy = strdup(action);
+
+    if (!actionCopy)
+        die("strdup");
+
+    char *pieces[4];
+
+    char *token = strtok(actionCopy, "\x1F");
+
+    if (!token)
+        die("strtok");
+
+    int i = 0;
+    for (; token != NULL && i < 4; i++)
+    {
+        pieces[i] = token;
+        token = strtok(NULL, "\x1F");
+    }
+
+    if (i < 4)
+        die("strtok");
+
+    char *typeAction = strdup(pieces[0]);
+    int row = atoi(pieces[1]);
+    int startCol = atoi(pieces[2]);
+    size_t commandLen = strlen(pieces[3]);
+
+    if (strcmp(typeAction, "add") == 0)
+    {
+        eConfig.cursorY = row;
+        eConfig.cursorX = startCol;
+
+        for (size_t i = 0; i < commandLen; i++)
+        {
+            editorInsertChar(pieces[3][i]);
+            editorMoveCursor(ARROW_RIGHT);
+        }
+    }
+    else if (strcmp(typeAction, "delete") == 0 || strcmp(typeAction, "backspace") == 0)
+    {
+        eConfig.cursorY = row;
+        eConfig.cursorX = startCol + commandLen;
+
+        for (size_t i = 0; i < commandLen; i++)
+        {
+            editorBackspaceChar(row, eConfig.cursorX);
+        }
+    }
+    else if (strcmp(typeAction, "newline") == 0)
+    {
+        eConfig.cursorY = row;
+        eConfig.cursorX = startCol;
+        editorInsertNewline();
+        eConfig.cursorY = row + 1;
+        eConfig.cursorX = 0;
+    }
+    else if (strcmp(typeAction, "mergeLine") == 0)
+    {
+        editorBackspaceChar(row + 1, 0);
+        eConfig.cursorY = row;
+        eConfig.cursorX = startCol;
+    }
+
     push(&eConfig.undoStack, action);
 
     free(action);
+    free(actionCopy);
+    free(typeAction);
 }
 
 void editorScroll()
