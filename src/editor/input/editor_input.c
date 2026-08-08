@@ -60,14 +60,31 @@ void editorProcessKeyPress()
     int c = terminalReadKey();
     int deletedChar;
 
+    if (c != CTRL_KEY('q'))
+        eConfig.quitConfirm = 0;
+
     switch (c)
     {
     case CTRL_KEY('q'):
+    {
+        int isDirty = (eConfig.activeCommand.command != NULL || eConfig.undoStack != eConfig.lastSave);
+
+        if (isDirty)
+        {
+            if (!eConfig.quitConfirm)
+            {
+                eConfig.quitConfirm = 1;
+                editorSetStatusMessage("WARNING: There are unsaved changes. Press Ctrl-Q again to exit without saving, or Ctrl-S to save.");
+                break;
+            }
+        }
+
         clearScreen('2');
         moveCursor(0, 0);
         exit(0);
         break;
-
+    }
+    
     case CTRL_KEY('s'):
         editorSave();
         break;

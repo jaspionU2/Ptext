@@ -47,10 +47,11 @@ typedef struct
     int numRows;
     EditorRow *row;
     char *filename;
-    char statusMessage[80];
+    char statusMessage[150];
     time_t statusMsgTime;
     char comandBar[20][20];
     int isComandBar;
+    int quitConfirm;
     stack *undoStack;
     stack *redoStack;
     CommandHistory activeCommand;
@@ -81,6 +82,7 @@ void editorBackspaceChar(int atRow, int atCol);
 /*** editor operation ***/
 
 void editorInsertChar(int c);
+void editorHistoryToUndo(CommandHistory *h);
 void editorBackup(char *actionType, int command);
 void editorUndo();
 void editorRedo();

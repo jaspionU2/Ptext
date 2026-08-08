@@ -88,7 +88,10 @@ void editorDrawnStatusBar(abuf *appendBuffer)
     abAppend(appendBuffer, "\x1b[7m", 4);
 
     char status[80], rStatus[80], cStatus[80];
-    int lenString = snprintf(status, sizeof(status), "%.20s  - %d lines", eConfig.filename ? eConfig.filename : "[No Name]", eConfig.numRows);
+
+    int isDirty = (eConfig.activeCommand.command != NULL || eConfig.undoStack != eConfig.lastSave);
+
+    int lenString = snprintf(status, sizeof(status), "%.20s%s - %d lines", eConfig.filename ? eConfig.filename : "[No Name]", isDirty ? "*" : "", eConfig.numRows);
     int rLen = snprintf(rStatus, sizeof(rStatus), "%d/%d", eConfig.cursorY + 1, eConfig.numRows + 1);
     int cLen = snprintf(cStatus, sizeof(cStatus), "^T - help");
 

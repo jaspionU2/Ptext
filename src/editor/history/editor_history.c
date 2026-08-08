@@ -9,10 +9,48 @@
 #include "editor.h"
 #include "terminal.h"
 
+void editorHistoryToUndo(CommandHistory *h)
+{
+    int historyLen = snprintf(NULL, 0, "%s\x1F%d\x1F%d\x1F%s",
+                              h->typeAction, h->row, h->startX, h->command);
+    if (historyLen < 0)
+        die("snprintf");
+
+    char *historyEntry = malloc((size_t)historyLen + 1);
+    if (!historyEntry)
+        die("malloc");
+
+    snprintf(historyEntry, (size_t)historyLen + 1, "%s\x1F%d\x1F%d\x1F%s",
+             h->typeAction, h->row, h->startX, h->command);
+
+    push(&eConfig.undoStack, historyEntry);
+
+    free(h->typeAction);
+    free(h->command);
+    h->typeAction = NULL;
+    h->command = NULL;
+    h->len = 0;
+    h->row = -1;
+    h->startX = -1;
+}
+
 void editorBackup(char *actionType, int command)
 {
     if (eConfig.redoStack)
+    {
         freeStack(&eConfig.redoStack);
+
+        stack *temp = eConfig.redoStack;
+        while (temp != NULL)
+        {
+            if (eConfig.lastSave == temp)
+            {
+                eConfig.lastSave = NULL;
+                break;
+            }
+            temp = temp->last;
+        }
+    }
 
     CommandHistory *currentHistory = &eConfig.activeCommand;
 
@@ -47,24 +85,7 @@ void editorBackup(char *actionType, int command)
 
     if (shouldFlush)
     {
-        int historyLen = snprintf(NULL, 0, "%s\x1F%d\x1F%d\x1F%s", currentHistory->typeAction, currentHistory->row, currentHistory->startX, currentHistory->command);
-
-        if (historyLen < 0)
-            die("snprintf");
-
-        char *historyEntry = malloc(historyLen + 1);
-
-        if (!historyEntry)
-            die("malloc");
-
-        snprintf(historyEntry, historyLen + 1, "%s\x1F%d\x1F%d\x1F%s", currentHistory->typeAction, currentHistory->row, currentHistory->startX, currentHistory->command);
-
-        push(&eConfig.undoStack, historyEntry);
-
-        free(currentHistory->typeAction);
-        free(currentHistory->command);
-
-        currentHistory->command = NULL;
+        editorHistoryToUndo(currentHistory);
     }
 
     if (currentHistory->command == NULL)
@@ -141,32 +162,7 @@ void editorUndo()
 
     if (currentHistory->command != NULL && currentHistory->typeAction != NULL)
     {
-        int historyLen = snprintf(NULL, 0, "%s\x1F%d\x1F%d\x1F%s",
-                                  currentHistory->typeAction,
-                                  currentHistory->row,
-                                  currentHistory->startX,
-                                  currentHistory->command);
-
-        if (historyLen < 0)
-            die("snprintf");
-
-        char *historyEntry = malloc((size_t)historyLen + 1);
-        if (!historyEntry)
-            die("malloc");
-
-        snprintf(historyEntry, (size_t)historyLen + 1, "%s\x1F%d\x1F%d\x1F%s",
-                 currentHistory->typeAction,
-                 currentHistory->row,
-                 currentHistory->startX,
-                 currentHistory->command);
-
-        push(&eConfig.undoStack, historyEntry);
-
-        free(currentHistory->typeAction);
-        free(currentHistory->command);
-        currentHistory->typeAction = NULL;
-        currentHistory->command = NULL;
-        currentHistory->len = 0;
+        editorHistoryToUndo(currentHistory);
     }
 
     if (!eConfig.undoStack)

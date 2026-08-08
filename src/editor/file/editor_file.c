@@ -12,6 +12,8 @@
 #include "editor.h"
 #include "terminal.h"
 
+
+
 void editorOpen(char *filename)
 {
     free(eConfig.filename);
@@ -70,7 +72,34 @@ char *editorRowToString(int *buflen)
 void editorSave()
 {
     if (!eConfig.filename)
-        return;
+    {
+        char cwd[1024];
+
+        if (getcwd(cwd, sizeof(cwd)) == NULL)
+        {
+            die("getcwd");
+        }
+
+        char filename[200];
+
+        int result = snprintf(filename, sizeof(filename), "%s/new_file.txt", cwd);
+
+        if (result < 0 || (size_t) result >= sizeof(filename))
+        {
+            die("snprintf(). Error formating new file path.");
+        }
+
+        FILE *fp = fopen(filename, "a");
+
+        if (!fp)
+        {
+            fclose(fp);
+            die("Error opening or creating file!");
+        }
+
+        eConfig.filename = strdup("new_file.txt");
+        fclose(fp);
+    }
 
     int buflen;
     char *buffer = editorRowToString(&buflen);
@@ -86,6 +115,14 @@ void editorSave()
                 close(fd);
                 free(buffer);
                 editorSetStatusMessage("%d bytes written to disk", buflen);
+
+                if (eConfig.activeCommand.command)
+                {
+                    editorHistoryToUndo(&eConfig.activeCommand);
+                }
+
+                eConfig.lastSave = eConfig.undoStack;
+                eConfig.quitConfirm = 0;
                 return;
             }
         }
