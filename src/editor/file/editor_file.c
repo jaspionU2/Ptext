@@ -104,7 +104,7 @@ void editorSave()
     int buflen;
     char *buffer = editorRowToString(&buflen);
 
-    int fd = open(eConfig.filename, O_RDWR | O_CREAT, 0644);
+    int fd = open(eConfig.filename, O_RDWR | O_CREAT | O_EXCL, 0644);
 
     if (fd != -1)
     {
