@@ -65,6 +65,7 @@ extern int drawMessageBar;
 void initEditor();
 
 /*** file i/o ***/
+void editorNewFile(char *filename);
 void editorOpen(char *filename);
 char *editorRowToString(int *buflen);
 void editorSave();

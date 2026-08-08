@@ -8,16 +8,57 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/stat.h>
 
 #include "editor.h"
 #include "terminal.h"
 
+void editorNewFile(char *filename)
+{
+    char cwd[1024];
 
+    if (getcwd(cwd, sizeof(cwd)) == NULL)
+    {
+        die("getcwd");
+    }
+
+    char filenamePath[200];
+
+    int result = snprintf(filenamePath, sizeof(filenamePath), "%s/%s", cwd, filename);
+
+    if (result < 0 || (size_t)result >= sizeof(filenamePath))
+    {
+        die("snprintf(). Error formating new file path.");
+    }
+
+    FILE *fp = fopen(filenamePath, "a");
+
+    if (!fp)
+    {
+        die("Error opening or creating file!");
+    }
+
+    eConfig.filename = strdup(filenamePath);
+    fclose(fp);
+}
 
 void editorOpen(char *filename)
 {
     free(eConfig.filename);
     eConfig.filename = strdup(filename);
+
+    struct stat buffer;
+    if (stat(filename, &buffer) != 0)
+    {
+        editorNewFile(filename);
+    }
+    else
+    {
+        if (S_ISDIR(buffer.st_mode))
+        {
+            editorNewFile(filename);
+        }
+    }
 
     FILE *fp = fopen(filename, "r");
     if (!fp)
@@ -73,38 +114,13 @@ void editorSave()
 {
     if (!eConfig.filename)
     {
-        char cwd[1024];
-
-        if (getcwd(cwd, sizeof(cwd)) == NULL)
-        {
-            die("getcwd");
-        }
-
-        char filename[200];
-
-        int result = snprintf(filename, sizeof(filename), "%s/new_file.txt", cwd);
-
-        if (result < 0 || (size_t) result >= sizeof(filename))
-        {
-            die("snprintf(). Error formating new file path.");
-        }
-
-        FILE *fp = fopen(filename, "a");
-
-        if (!fp)
-        {
-            fclose(fp);
-            die("Error opening or creating file!");
-        }
-
-        eConfig.filename = strdup("new_file.txt");
-        fclose(fp);
+        editorNewFile("new_file.txt");
     }
 
     int buflen;
     char *buffer = editorRowToString(&buflen);
 
-    int fd = open(eConfig.filename, O_RDWR | O_CREAT | O_EXCL, 0644);
+    int fd = open(eConfig.filename, O_RDWR | O_CREAT, 0644);
 
     if (fd != -1)
     {
